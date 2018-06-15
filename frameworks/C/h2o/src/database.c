@@ -29,6 +29,8 @@
 #include "list.h"
 #include "thread.h"
 
+#define DATABASE_CONNECT_TIMEOUT H2O_DEFAULT_HTTP1_REQ_TIMEOUT
+#define DATABASE_QUERY_TIMEOUT H2O_DEFAULT_HTTP1_REQ_TIMEOUT
 #define IS_RESETTING 1
 #define IS_WRITING 2
 
@@ -40,7 +42,7 @@ typedef struct {
 	list_t *prepared_statement;
 	h2o_socket_t *sock;
 	uint_fast32_t flags;
-	h2o_timeout_entry_t h2o_timeout_entry;
+	h2o_timer_t timer;
 } db_conn_t;
 
 typedef struct {
@@ -53,10 +55,10 @@ static int do_database_write(db_conn_t *db_conn);
 static int do_execute_query(db_conn_t *db_conn, bool direct_notification);
 static void error_notification(thread_context_t *ctx, bool timeout, const char *error_string);
 static void on_database_connect_error(db_conn_t *db_conn, bool timeout, const char *error_string);
-static void on_database_connect_timeout(h2o_timeout_entry_t *entry);
+static void on_database_connect_timeout(h2o_timer_t *timer);
 static void on_database_error(db_conn_t *db_conn, const char *error_string);
 static void on_database_read_ready(h2o_socket_t *db_sock, const char *err);
-static void on_database_timeout(h2o_timeout_entry_t *entry);
+static void on_database_timeout(h2o_timer_t *timer);
 static void on_database_write_ready(h2o_socket_t *db_sock, const char *err);
 static void poll_database_connection(h2o_socket_t *db_sock, const char *err);
 static void process_query(db_conn_t *db_conn);
@@ -99,10 +101,10 @@ static int do_execute_query(db_conn_t *db_conn, bool direct_notification)
 		if (db_conn->param->flags & IS_SINGLE_ROW)
 			PQsetSingleRowMode(db_conn->conn);
 
-		db_conn->h2o_timeout_entry.cb = on_database_timeout;
-		h2o_timeout_link(db_conn->ctx->event_loop.h2o_ctx.loop,
-		                 &db_conn->ctx->db_state.h2o_timeout,
-		                 &db_conn->h2o_timeout_entry);
+		db_conn->timer.cb = on_database_timeout;
+		h2o_timer_link(db_conn->ctx->event_loop.h2o_ctx.loop,
+		               DATABASE_QUERY_TIMEOUT,
+		               &db_conn->timer);
 		h2o_socket_read_start(db_conn->sock, on_database_read_ready);
 
 		const int send_status = PQflush(db_conn->conn);
@@ -162,16 +164,16 @@ static void on_database_connect_error(db_conn_t *db_conn, bool timeout, const ch
 	thread_context_t * const ctx = db_conn->ctx;
 
 	error_notification(ctx, timeout, error_string);
-	h2o_timeout_unlink(&db_conn->h2o_timeout_entry);
+	h2o_timer_unlink(&db_conn->timer);
 	h2o_socket_read_stop(db_conn->sock);
 	h2o_socket_close(db_conn->sock);
 	PQfinish(db_conn->conn);
 	free(db_conn);
 }
 
-static void on_database_connect_timeout(h2o_timeout_entry_t *entry)
+static void on_database_connect_timeout(h2o_timer_t *timer)
 {
-	db_conn_t * const db_conn = H2O_STRUCT_FROM_MEMBER(db_conn_t, h2o_timeout_entry, entry);
+	db_conn_t * const db_conn = H2O_STRUCT_FROM_MEMBER(db_conn_t, timer, timer);
 
 	ERROR(DB_TIMEOUT_ERROR);
 	on_database_connect_error(db_conn, true, DB_TIMEOUT_ERROR);
@@ -188,7 +190,7 @@ static void on_database_error(db_conn_t *db_conn, const char *error_string)
 		}
 
 		if (PQstatus(db_conn->conn) == CONNECTION_OK) {
-			h2o_timeout_unlink(&db_conn->h2o_timeout_entry);
+			h2o_timer_unlink(&db_conn->timer);
 			h2o_socket_read_stop(db_conn->sock);
 			process_query(db_conn);
 		}
@@ -225,7 +227,7 @@ static void on_database_read_ready(h2o_socket_t *db_sock, const char *err)
 								break;
 							case DONE:
 								db_conn->param = NULL;
-								h2o_timeout_unlink(&db_conn->h2o_timeout_entry);
+								h2o_timer_unlink(&db_conn->timer);
 								break;
 							default:
 								break;
@@ -239,7 +241,7 @@ static void on_database_read_ready(h2o_socket_t *db_sock, const char *err)
 
 					if (!result) {
 						assert(!db_conn->param);
-						h2o_timeout_unlink(&db_conn->h2o_timeout_entry);
+						h2o_timer_unlink(&db_conn->timer);
 						h2o_socket_read_stop(db_conn->sock);
 						process_query(db_conn);
 						break;
@@ -256,9 +258,9 @@ static void on_database_read_ready(h2o_socket_t *db_sock, const char *err)
 	on_database_error(db_conn, DB_ERROR);
 }
 
-static void on_database_timeout(h2o_timeout_entry_t *entry)
+static void on_database_timeout(h2o_timer_t *timer)
 {
-	db_conn_t * const db_conn = H2O_STRUCT_FROM_MEMBER(db_conn_t, h2o_timeout_entry, entry);
+	db_conn_t * const db_conn = H2O_STRUCT_FROM_MEMBER(db_conn_t, timer, timer);
 
 	ERROR(DB_TIMEOUT_ERROR);
 
@@ -318,7 +320,7 @@ static void poll_database_connection(h2o_socket_t *db_sock, const char *err)
 					break;
 				}
 
-				h2o_timeout_unlink(&db_conn->h2o_timeout_entry);
+				h2o_timer_unlink(&db_conn->timer);
 				h2o_socket_read_stop(db_conn->sock);
 				process_query(db_conn);
 				return;
@@ -342,10 +344,10 @@ static void process_query(db_conn_t *db_conn)
 
 		if (PQsendPrepare(db_conn->conn, p->name, p->query, 0, NULL)) {
 			db_conn->prepared_statement = p->l.next;
-			db_conn->h2o_timeout_entry.cb = on_database_connect_timeout;
-			h2o_timeout_link(db_conn->ctx->event_loop.h2o_ctx.loop,
-			                 &db_conn->ctx->db_state.h2o_timeout,
-			                 &db_conn->h2o_timeout_entry);
+			db_conn->timer.cb = on_database_connect_timeout;
+			h2o_timer_link(db_conn->ctx->event_loop.h2o_ctx.loop,
+			               DATABASE_QUERY_TIMEOUT,
+			               &db_conn->timer);
 			h2o_socket_read_start(db_conn->sock, on_database_read_ready);
 			on_database_write_ready(db_conn->sock, NULL);
 		}
@@ -379,7 +381,7 @@ static void start_database_connect(thread_context_t *ctx, db_conn_t *db_conn)
 {
 	if (db_conn) {
 		db_conn->flags = IS_RESETTING;
-		h2o_timeout_unlink(&db_conn->h2o_timeout_entry);
+		h2o_timer_unlink(&db_conn->timer);
 		h2o_socket_read_stop(db_conn->sock);
 		h2o_socket_close(db_conn->sock);
 
@@ -430,11 +432,11 @@ static void start_database_connect(thread_context_t *ctx, db_conn_t *db_conn)
 	if (db_conn->sock) {
 		db_conn->sock->data = db_conn;
 		db_conn->ctx = ctx;
-		db_conn->h2o_timeout_entry.cb = on_database_connect_timeout;
 		db_conn->prepared_statement = ctx->global_data->prepared_statements;
-		h2o_timeout_link(ctx->event_loop.h2o_ctx.loop,
-		                 &ctx->db_state.h2o_timeout,
-		                 &db_conn->h2o_timeout_entry);
+		db_conn->timer.cb = on_database_connect_timeout;
+		h2o_timer_link(ctx->event_loop.h2o_ctx.loop,
+		               DATABASE_CONNECT_TIMEOUT,
+		               &db_conn->timer);
 		h2o_socket_notify_write(db_conn->sock, poll_database_connection);
 		return;
 	}
@@ -489,7 +491,7 @@ int execute_query(thread_context_t *ctx, db_query_param_t *param)
 	return ret;
 }
 
-void free_database_state(h2o_loop_t *loop, db_state_t *db_state)
+void free_database_state(db_state_t *db_state)
 {
 	assert(!db_state->query_num && db_state->free_db_conn_num == db_state->db_conn_num);
 
@@ -500,20 +502,17 @@ void free_database_state(h2o_loop_t *loop, db_state_t *db_state)
 			db_conn_t * const db_conn = H2O_STRUCT_FROM_MEMBER(db_conn_t, l, iter);
 
 			iter = iter->next;
-			assert(!db_conn->param && !h2o_timeout_is_linked(&db_conn->h2o_timeout_entry));
+			assert(!db_conn->param && !h2o_timeout_is_linked(&db_conn->timer));
 			h2o_socket_close(db_conn->sock);
 			PQfinish(db_conn->conn);
 			free(db_conn);
 		} while (iter);
-
-	h2o_timeout_dispose(loop, &db_state->h2o_timeout);
 }
 
-void initialize_database_state(h2o_loop_t *loop, db_state_t *db_state)
+void initialize_database_state(db_state_t *db_state)
 {
 	memset(db_state, 0, sizeof(*db_state));
 	db_state->queries.tail = &db_state->queries.head;
-	h2o_timeout_init(loop, &db_state->h2o_timeout, H2O_DEFAULT_HTTP1_REQ_TIMEOUT);
 }
 
 void remove_prepared_statements(list_t *prepared_statements)

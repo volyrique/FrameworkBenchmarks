@@ -70,13 +70,12 @@ typedef struct {
 	size_t db_conn_num;
 	size_t free_db_conn_num;
 	size_t query_num;
-	h2o_timeout_t h2o_timeout;
 } db_state_t;
 
 void add_prepared_statement(const char *name, const char *query, list_t **prepared_statements);
 int execute_query(thread_context_t *ctx, db_query_param_t *param);
-void free_database_state(h2o_loop_t *loop, db_state_t *db_state);
-void initialize_database_state(h2o_loop_t *loop, db_state_t *db_state);
+void free_database_state(db_state_t *db_state);
+void initialize_database_state(db_state_t *db_state);
 void remove_prepared_statements(list_t *prepared_statements);
 
 #endif // DATABASE_H_

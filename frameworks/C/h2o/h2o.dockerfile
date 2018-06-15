@@ -25,7 +25,7 @@ RUN mkdir -p "$MUSTACHE_C_BUILD_DIR" && \
 
 ### Install h2o
 
-ENV H2O_VERSION=v2.2.6
+ENV H2O_VERSION=v2.3.0-beta2
 
 ENV H2O_BUILD_DIR=h2o-build
 ENV H2O_PREFIX=/opt/h2o

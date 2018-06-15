@@ -126,7 +126,9 @@ static uintmax_t add_iovec(mustache_api_t *api,
 	if (iovec_list->iovcnt >= iovec_list->max_iovcnt) {
 		const size_t sz = offsetof(iovec_list_t, iov) + MAX_IOVEC * sizeof(h2o_iovec_t);
 
-		iovec_list = h2o_mem_alloc_pool(&fortune_ctx->req->pool, sz);
+		iovec_list = h2o_mem_alloc_pool_aligned(&fortune_ctx->req->pool,
+		                                        _Alignof(iovec_list_t),
+		                                        sz);
 		memset(iovec_list, 0, offsetof(iovec_list_t, iov));
 		iovec_list->max_iovcnt = MAX_IOVEC;
 		fortune_ctx->iovec_list_iter->l.next = &iovec_list->l;
@@ -195,7 +197,7 @@ static int fortunes(struct st_h2o_handler_t *self, h2o_req_t *req)
 	                                                      event_loop.h2o_ctx,
 	                                                      req->conn->ctx);
 	fortune_ctx_t * const fortune_ctx = h2o_mem_alloc(sizeof(*fortune_ctx));
-	fortune_t * const fortune = h2o_mem_alloc_pool(&req->pool, sizeof(*fortune));
+	fortune_t * const fortune = h2o_mem_alloc_pool(&req->pool, fortune_t, 1);
 	fortune_ctx_t ** const p = h2o_mem_alloc_shared(&req->pool, sizeof(*p), cleanup_request);
 
 	*p = fortune_ctx;
@@ -252,7 +254,8 @@ static result_return_t on_fortune_result(db_query_param_t *param, PGresult *resu
 
 		for (size_t i = 0; i < num_rows; i++) {
 			fortune_t * const fortune = h2o_mem_alloc_pool(&fortune_ctx->req->pool,
-			                                               sizeof(*fortune));
+			                                               fortune_t,
+			                                               1);
 			char * const id = PQgetvalue(result, i, 0);
 			char * const message = PQgetvalue(result, i, 1);
 			const size_t id_len = PQgetlength(result, i, 0);
@@ -278,7 +281,9 @@ static result_return_t on_fortune_result(db_query_param_t *param, PGresult *resu
 		                                                      fortune_ctx->req->conn->ctx);
 		const size_t iovcnt = MIN(MAX_IOVEC, fortune_ctx->num_result * 5 + 2);
 		const size_t sz = offsetof(iovec_list_t, iov) + iovcnt * sizeof(h2o_iovec_t);
-		iovec_list_t * const iovec_list = h2o_mem_alloc_pool(&fortune_ctx->req->pool, sz);
+		iovec_list_t * const iovec_list = h2o_mem_alloc_pool_aligned(&fortune_ctx->req->pool,
+		                                                             _Alignof(iovec_list_t),
+		                                                             sz);
 
 		memset(iovec_list, 0, offsetof(iovec_list_t, iov));
 		iovec_list->max_iovcnt = iovcnt;

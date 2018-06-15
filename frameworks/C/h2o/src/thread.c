@@ -89,7 +89,7 @@ static void set_thread_memory_allocation_policy(size_t thread_num)
 
 void free_thread_context(thread_context_t *ctx)
 {
-	free_database_state(ctx->event_loop.h2o_ctx.loop, &ctx->db_state);
+	free_database_state(&ctx->db_state);
 	free_event_loop(&ctx->event_loop, &ctx->global_thread_data->h2o_receiver);
 	free_request_handler_thread_data(&ctx->request_handler_data);
 
@@ -139,7 +139,7 @@ void initialize_thread_context(global_thread_data_t *global_thread_data,
 	                      global_thread_data->global_data,
 	                      &global_thread_data->h2o_receiver,
 	                      &ctx->event_loop);
-	initialize_database_state(ctx->event_loop.h2o_ctx.loop, &ctx->db_state);
+	initialize_database_state(&ctx->db_state);
 	initialize_request_handler_thread_data(ctx->config, &ctx->request_handler_data);
 	global_thread_data->ctx = ctx;
 }
