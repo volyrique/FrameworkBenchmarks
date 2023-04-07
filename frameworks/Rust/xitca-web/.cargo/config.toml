@@ -4,3 +4,6 @@ incremental = false
 
 [target.wasm32-wasip1-threads]
 rustflags = ["-C", "target-feature=+simd128", "--cfg", "tokio_unstable"]
+
+[target.wasm32-wasip1]
+rustflags = ["-C", "target-feature=+simd128", "--cfg", "tokio_unstable"]

@@ -57,3 +57,13 @@ os = "wasi"
 platform = "wasm"
 webserver = "xitca-server"
 versus = ""
+
+[wasm-node]
+urls.json = "/json"
+urls.plaintext = "/plaintext"
+approach = "Realistic"
+classification = "Micro"
+os = "wasi"
+platform = "wasm"
+webserver = "xitca-server"
+versus = ""

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
+name = "node-launcher"
+path = "./src/node_launcher.rs"
+
+[[bin]]
 name = "xitca-web"
 path = "./src/main.rs"
 required-features = ["io-uring", "pg", "router", "template"]
@@ -84,6 +88,7 @@ tower-http = { version = "0.5", features = ["set-header"], optional = true }
 futures-core = { version = "0.3", default-features = false }
 nanorand = { version = "0.7", default-features = false, features = ["tls"] }
 tokio = "1"
+libc = "0.2"
 
 [profile.release]
 lto = true
