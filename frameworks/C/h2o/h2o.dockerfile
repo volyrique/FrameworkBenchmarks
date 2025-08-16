@@ -9,10 +9,13 @@ RUN apt-get -yqq update && \
     apt-get -yqq install \
       autoconf \
       bison \
+      bpftool \
+      clang \
       cmake \
       curl \
       flex \
       g++ \
+      libbpf-dev \
       libbpfcc-dev \
       libbrotli-dev \
       libcap-dev \
@@ -76,6 +79,7 @@ FROM "ubuntu:${UBUNTU_VERSION}"
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get -yqq update && \
     apt-get -yqq install \
+      libbpf1 \
       libnuma1 \
       libpq5 \
       libyajl2
