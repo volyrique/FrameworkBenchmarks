@@ -5,7 +5,8 @@ builds directly on top of `libh2o` instead of running the standalone server.
 
 ## Requirements
 
-[CMake](https://cmake.org), [H2O](https://h2o.examp1e.net), [libpq](https://www.postgresql.org),
+[CMake](https://cmake.org), [H2O](https://h2o.examp1e.net),
+[libbpf](https://github.com/libbpf/libbpf), [libpq](https://www.postgresql.org),
 [mustache-c](https://github.com/x86-64/mustache-c), [numactl](https://github.com/numactl/numactl),
 [OpenSSL](https://www.openssl.org), [YAJL](https://lloyd.github.io/yajl)
 
