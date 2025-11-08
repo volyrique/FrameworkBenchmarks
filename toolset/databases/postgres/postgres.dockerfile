@@ -8,3 +8,4 @@ ENV PGDATA=/ssd/postgresql \
 COPY 60-postgresql-shm.conf /etc/sysctl.d/
 COPY config.sh create-postgres.sql /docker-entrypoint-initdb.d/
 COPY postgresql.conf /tmp/
+RUN sed -i "s/io-worker-number/$(( `nproc` / 4 ))/" /tmp/postgresql.conf
