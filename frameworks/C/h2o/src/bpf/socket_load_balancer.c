@@ -19,13 +19,9 @@
 
 // TODO: Switch to the standard atomics (<stdatomic.h>) after
 // the system header file mess gets sorted for eBPF.
-#include <stdbool.h>
 #include <stddef.h>
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
-
-// We need a finite number of iterations to keep the eBPF verifier happy.
-#define MAX_ITERATIONS 42
 
 static size_t thread_idx;
 size_t thread_num = 1;
@@ -33,26 +29,5 @@ size_t thread_num = 1;
 SEC("socket") int socket_load_balancer(void *skb)
 {
 	(void) skb;
-
-	// TODO: Use __atomic_load_n() after LLVM starts supporting it for eBPF.
-	size_t idx = *(const volatile size_t *) &thread_idx;
-	int ret = thread_num;
-
-	__atomic_thread_fence(__ATOMIC_RELAXED);
-
-	for (size_t i = 0; i < MAX_ITERATIONS; i++) {
-		const size_t new_idx = (idx + 1) % thread_num;
-
-		if (__atomic_compare_exchange_n(&thread_idx,
-		                                &idx,
-		                                new_idx,
-		                                false,
-		                                __ATOMIC_RELAXED,
-		                                __ATOMIC_RELAXED)) {
-			ret = idx;
-			break;
-		}
-	}
-
-	return ret;
+	return __atomic_fetch_add(&thread_idx, 1, __ATOMIC_RELAXED) % thread_num;
 }
